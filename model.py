@@ -1,3 +1,4 @@
+# %load model.py
 import inspect
 import os
 
@@ -30,7 +31,7 @@ class VGG16:
         # input placeholder
         self.x = tf.placeholder(tf.float32, [None, self.H, self.W, self.C])
         self.y = tf.placeholder(tf.float32, [None, self.classes])
-        self.w = tf.placeholder(tf.float32, [None, 1])
+        self.w = tf.placeholder(tf.float32, [None, self.classes])
         
         rgb_scaled = self.x
 
@@ -122,7 +123,7 @@ class VGG16:
             return relu
 
     def get_conv_filter(self, name):
-        return tf.constant(self.data_dict[name][0], name="filter")
+        return tf.get_variable(initializer=self.data_dict[name][0], name="filter")
 
     def get_bias(self, name):
-        return tf.constant(self.data_dict[name][1], name="biases")
+        return tf.get_variable(initializer=self.data_dict[name][1], name="biases")

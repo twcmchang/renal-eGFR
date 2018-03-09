@@ -1,6 +1,5 @@
 import cv2
 import numpy as np
-
 class Dataset(object):
     def __init__(self, uid, df, crop_size, resize_size):
         index = np.where(df['uid_date'].isin(uid))[0]
@@ -19,8 +18,8 @@ class Dataset(object):
             else:
                 weight = 9
             images.append(img)
-            labels.append(label)
-            weights.append(weight)
+            labels.append([label])
+            weights.append([weight])
         self.images = np.array(images)
         self.labels = np.array(labels)
         self.weights = np.array(weights)
@@ -33,7 +32,7 @@ class Dataset(object):
         xx = int((img.shape[1] - crop_size) / 2)
         crop_img = img[yy: yy + crop_size, xx: xx + crop_size]
         # resize to 224, 224
-        resized_img = cv2.resize(crop_img,(resize_size,resize_size), interpolation=cv2.INTER_AREA)
+        resized_img = cv2.resize(crop_img,(resize_size,resize_size),interpolation=cv2.INTER_AREA)
         return resized_img
     
     def shuffle(self):

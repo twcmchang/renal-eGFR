@@ -1,16 +1,19 @@
 import os
 import cv2
 import time
+import random
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+
 from progress.bar import Bar
 from ipywidgets import IntProgress
 from IPython.display import display
+import matplotlib.pyplot as plt
 
 from model import VGG16
-from utils import Dataset
 
+os.environ["CUDA_VISIBLE_DEVICES"] = "3,4"
 
 ###############
 # data import #
@@ -61,30 +64,26 @@ resize_size = 224
 train = Dataset(train_id, df, crop_size, resize_size)
 test  = Dataset(test_id, ori, crop_size, resize_size)
 
+print("training dataset: ", train.images.shape)
+print("test dataset: ", test.images.shape)
 
 #########
 # model #
 #########
 
-save_dir = "/Users/chunmingchang/renal-eGFR/test"
-init_from = "/Users/chunmingchang/renal-eGFR/vgg16.npy"
+save_dir = "tf_model"
+init_from = "vgg16.npy"
 
 # define training
-
-def vgg16_train(train, test, init_from, save_dir, batch_size=64, epoch=300, early_stop_patience=25):
-    vgg16 = VGG16(vgg16_npy_path=init_from)
-    vgg16.build()
-
-    saver = tf.train.Saver(tf.global_variables(), max_to_keep=2)
-
+def vgg16_train(model, train, test, init_from, save_dir, batch_size=64, epoch=300, early_stop_patience=25):
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
     
     checkpoint_path = os.path.join(save_dir, 'model.ckpt')
 
     with tf.Session() as sess:
-        sess.run(tf.global_variables_initializer())
-
+        print(tf.trainable_variables())
+        
         # hyper parameters
         learning_rate =  5e-4 #adam
         min_delta = 0.0001
@@ -96,7 +95,12 @@ def vgg16_train(train, test, init_from, save_dir, batch_size=64, epoch=300, earl
 
         # optimizer
         opt = tf.train.AdamOptimizer(learning_rate=learning_rate)
-        train_op = opt.minimize(vgg16.loss)
+        train_op = opt.minimize(model.loss)
+        
+        # saver 
+        saver = tf.train.Saver(tf.global_variables(), max_to_keep=2)
+        
+        sess.run(tf.global_variables_initializer())
 
         # progress bar
         ptrain = IntProgress()
@@ -123,10 +127,10 @@ def vgg16_train(train, test, init_from, save_dir, batch_size=64, epoch=300, earl
                 st = i*batch_size
                 ed = (i+1)*batch_size
                 
-                _, loss = sess.run([train_op, vgg16.loss ],
-                                   feed_dict={vgg16.x: train.images[st:ed,:],
-                                              vgg16.y: train.labels[st:ed,:],
-                                              vgg16.w: train.weights[st:ed,:]
+                _, loss = sess.run([train_op, model.loss],
+                                   feed_dict={model.x: train.images[st:ed,:],
+                                              model.y: train.labels[st:ed,:],
+                                              model.w: train.weights[st:ed,:]
                                              })
                 train_loss += loss
                 ptrain.value +=1
@@ -134,14 +138,25 @@ def vgg16_train(train, test, init_from, save_dir, batch_size=64, epoch=300, earl
                 bar_train.next()
             
             train_loss /= ptrain.max
+            
+            val_loss = 0
 
-            # validation
-            val_loss = sess.run([vgg16.loss],
-                                feed_dict={vgg16.x: test.images,
-                                            vgg16.y: test.labels,
-                                            vgg16.w: np.repeat(1.0,test.images.shape[0])})
-
-
+            for i in range(int(test.images.shape[0]/batch_size)):
+                st = i*batch_size
+                ed = (i+1)*batch_size
+                
+                loss = sess.run(model.loss,
+                                   feed_dict={model.x: test.images[st:ed,:],
+                                              model.y: test.labels[st:ed,:],
+                                              model.w: np.expand_dims(np.repeat(1.0,batch_size),axis=1)
+                                             })
+                val_loss += loss
+                pval.value +=1
+                pval.description = "Training %s/%s" % (i, pval.max)
+                bar_val.next()
+                
+            val_loss /= pval.max
+            
             if (current_best_val_loss - val_loss) > min_delta:
                 current_best_val_loss = val_loss
                 patience_counter = 0
@@ -152,9 +167,6 @@ def vgg16_train(train, test, init_from, save_dir, batch_size=64, epoch=300, earl
 
             # shuffle Xtrain and Ytrain in the next epoch
             train.shuffle()
-
-            # epoch end
-            epoch_counter += 1
             
             loss_history.append(train_loss)
             val_loss_history.append(val_loss)
@@ -163,14 +175,19 @@ def vgg16_train(train, test, init_from, save_dir, batch_size=64, epoch=300, earl
             pval.value = 0
             bar_train.finish()
             bar_val.finish()
-
             print("Epoch %s (%s), %s sec >> train-loss: %.4f, val-loss: %.4f" % (epoch_counter, patience_counter, round(time.time()-stime,2), train_loss, val_loss))
+            
+            # epoch end
+            epoch_counter += 1
+            if epoch_counter >= epoch:
+                break
         res = pd.DataFrame({"epoch":range(0,len(loss_history)), "loss":loss_history, "val_loss":val_loss_history})
         res.to_csv(os.path.join(save_dir,"history.csv"), index=False)
         print("end training")
 
-# define plot 
 def plot_making(save_dir, true, pred, types):
+    from scipy.stats.stats import pearsonr
+    from sklearn.metrics import mean_absolute_error, r2_score
     cor = pearsonr(true, pred)[0]
     mae = mean_absolute_error(true, pred)
     r2 = r2_score(true, pred) 
@@ -192,25 +209,34 @@ def plot_making(save_dir, true, pred, types):
     plt.show()
     plt.close()
     
-def save_plot(save_dir, test):
+def save_plot(model, save_dir, test, batch_size=64):
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
         saver = tf.train.Saver()
         ckpt = tf.train.get_checkpoint_state(save_dir)
+        pred = []
         if ckpt and ckpt.model_checkpoint_path:
             saver.restore(sess, ckpt.model_checkpoint_path)
             sess.run(tf.global_variables())
+            for i in range(test.images.shape[0]):
+                output = sess.run(model.output,
+                                   feed_dict={model.x: test.images[i:(i+1),:],
+                                              model.y: test.labels[i:(i+1),:],
+                                              model.w: [[1.0]]
+                                             })
 
-            val_loss, pred = sess.run([vgg16.loss, vgg16.output],
-                                      feed_dict={vgg16.x: test.images,
-                                                 vgg16.y: test.labels,
-                                                 vgg16.w: np.repeat(1.0, test.images.shape[0])})
-
+                pred.append(output)
+            pred = np.reshape(pred,newshape=(-1,1))
             plot_making(save_dir, test.labels, pred, types="test")
+            
+            print("mean square error: %.4f" % np.mean(np.square(test.labels-pred)))
+
+# with tf.variable_scope("test") as scope:
+vgg16 = VGG16(vgg16_npy_path=init_from)
+vgg16.build()
 
 ## training start ##
-vgg16_train(train, test, save_dir=save_dir, init_from=init_from, batch_size=64, epoch=300, early_stop=25)
-
+vgg16_train(vgg16, train, test, save_dir=save_dir, init_from=init_from, batch_size=64, epoch=300, early_stop_patience=25)
 ## save result ## 
-save_plot(save_dir, test)
+save_plot(vgg16, save_dir, test)
 
