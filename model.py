@@ -126,10 +126,10 @@ class VGG16:
         if pretrain:
             return tf.get_variable(initializer=self.data_dict[name][0], name="filter")
         else:
-            return  tf.get_variable(shape=self.data_dict[name][0].shape, initializer=tf.truncated_normal_initializer(mean=0, stddev=0.1), name="filter", , dtype=tf.float32) 
+            return  tf.get_variable(shape=self.data_dict[name][0].shape, initializer=tf.truncated_normal_initializer(mean=0, stddev=0.1), name="filter", dtype=tf.float32) 
 
     def get_bias(self, name, pretrain):
         if pretrain:
             return tf.get_variable(initializer=self.data_dict[name][1], name="biases")
         else:
-            return tf.get_variable(shape=self.data_dict[name][1].shape, initializer=tf.truncated_normal_initializer(mean=0, stddev=0.1), name="biases", , dtype=tf.float32) 
+            return tf.get_variable(shape=self.data_dict[name][1].shape, initializer=tf.truncated_normal_initializer(mean=0, stddev=0.1), name="biases", dtype=tf.float32) 
