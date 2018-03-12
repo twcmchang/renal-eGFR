@@ -66,14 +66,14 @@ class VGG16:
         self.conv3_3 = self.conv_layer(self.conv3_2, "conv3_3")
         self.pool3 = self.max_pool(self.conv3_3, 'pool3')
 
-        self.conv4_1 = self.conv_layer(self.pool3, "conv4_1")
-        self.conv4_2 = self.conv_layer(self.conv4_1, "conv4_2")
-        self.conv4_3 = self.conv_layer(self.conv4_2, "conv4_3")
+        self.conv4_1 = self.conv_layer(self.pool3, "conv4_1", pretrain=False)
+        self.conv4_2 = self.conv_layer(self.conv4_1, "conv4_2", pretrain=False)
+        self.conv4_3 = self.conv_layer(self.conv4_2, "conv4_3", pretrain=False)
         self.pool4 = self.max_pool(self.conv4_3, 'pool4')
 
-        self.conv5_1 = self.conv_layer(self.pool4, "conv5_1")
-        self.conv5_2 = self.conv_layer(self.conv5_1, "conv5_2")
-        self.conv5_3 = self.conv_layer(self.conv5_2, "conv5_3")
+        self.conv5_1 = self.conv_layer(self.pool4, "conv5_1", pretrain=False)
+        self.conv5_2 = self.conv_layer(self.conv5_1, "conv5_2", pretrain=False)
+        self.conv5_3 = self.conv_layer(self.conv5_2, "conv5_3", pretrain=False)
         self.pool5 = self.max_pool(self.conv5_3, 'pool5')
 
         self.flatten_input = self.flatten(self.pool5)
@@ -110,20 +110,26 @@ class VGG16:
         x = tf.reshape(bottom, [-1, dim])
         return x
 
-    def conv_layer(self, bottom, name):
+    def conv_layer(self, bottom, name, pretrain=True):
         with tf.variable_scope(name):
-            filt = self.get_conv_filter(name)
+            filt = self.get_conv_filter(name, pretrain)
 
             conv = tf.nn.conv2d(bottom, filt, [1, 1, 1, 1], padding='SAME')
 
-            conv_biases = self.get_bias(name)
+            conv_biases = self.get_bias(name, pretrain)
             bias = tf.nn.bias_add(conv, conv_biases)
 
             relu = tf.nn.relu(bias)
             return relu
 
-    def get_conv_filter(self, name):
-        return tf.get_variable(initializer=self.data_dict[name][0], name="filter")
+    def get_conv_filter(self, name, pretrain):
+        if pretrain:
+            return tf.get_variable(initializer=self.data_dict[name][0], name="filter")
+        else:
+            return  tf.get_variable(shape=self.data_dict[name][0].shape, initializer=tf.truncated_normal_initializer(mean=0, stddev=0.1), name="filter", , dtype=tf.float32) 
 
-    def get_bias(self, name):
-        return tf.get_variable(initializer=self.data_dict[name][1], name="biases")
+    def get_bias(self, name, pretrain):
+        if pretrain:
+            return tf.get_variable(initializer=self.data_dict[name][1], name="biases")
+        else:
+            return tf.get_variable(shape=self.data_dict[name][1].shape, initializer=tf.truncated_normal_initializer(mean=0, stddev=0.1), name="biases", , dtype=tf.float32) 
